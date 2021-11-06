@@ -3,6 +3,7 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include <TimerOne.h>
+#include <EEPROM.h>
 
 #define BT_STOP 3
 #define BT_SELECT 4
@@ -14,19 +15,23 @@
 #define ALARM 2
 #define COUNT 3
 #define BAR 6
+
 Adafruit_SSD1306 display(128, 32, &Wire);
 
 int Mode[3] = {CLOCK, ALARM, COUNT};
 int Mode_n = 0;
+int addr = 0;
 
 int Display_status = 0;
 int Display_BG[2] = {1, 0};
 int Display_Text[2] = {0, 1};
 int Display_cursor[2] = {0, 1};
 int Display_Text_cursor[2] = {1, 0};
+int Display_frame[2] = {0, 1};
+
 bool cursor_state = 0;
 int pattern = 0;
-unsigned long int last_state_cursor = 0, last_state_pattern = 0;
+unsigned long int last_state_cursor = 0;
 
 int Hour_time_now = 0;
 int Minute_time_now = 0;
@@ -42,16 +47,28 @@ int Sec_time_count = 0;
 int BT[3] = {BT_MODE, BT_SELECT, BT_STOP};
 unsigned long int last_time_click[3] = {0, 0, 0};
 int Readswitch[3];
+int Read_BAR;
 
 int Clock_mode = 0, Alarm_mode = 0, Count_mode = 0;
 int state_alarm = 0, state_count = 0;
 
 bool BT_STOP_state = 1;
-
-int Pos_clock_time[4]={14,10,101,24};
-
+void pull_EEPROM()
+{
+    addr = 0;
+    EEPROM.get(addr, Hour_time_now);
+    addr += sizeof(Hour_time_now);
+    EEPROM.get(addr, Minute_time_now);
+    addr += sizeof(Minute_time_now);
+    EEPROM.get(addr, Hour_time_alarm);
+    addr += sizeof(Hour_time_alarm);
+    EEPROM.get(addr, Minute_time_alarm);
+    addr += sizeof(Minute_time_alarm);
+    EEPROM.get(addr, state_alarm);
+}
 void setup()
 {
+    pull_EEPROM();
     pinMode(BT_MODE, INPUT_PULLUP);
     pinMode(BT_SELECT, INPUT_PULLUP);
     pinMode(BT_STOP, INPUT_PULLUP);
@@ -66,9 +83,26 @@ void reset_time_count()
     Minute_time_count = 0;
     Sec_time_count = 0;
 }
+void set_time()
+{
+    addr = 0;
+    EEPROM.put(addr, Hour_time_now);
+    addr += sizeof(Hour_time_now);
+    EEPROM.put(addr, Minute_time_now);
+}
+void set_alarm_time()
+{
+    addr = sizeof(Hour_time_now) + sizeof(Minute_time_now);
+    EEPROM.put(addr, Hour_time_alarm);
+    addr += sizeof(Hour_time_alarm);
+    EEPROM.put(addr, Minute_time_alarm);
+    addr += sizeof(Minute_time_now);
+    EEPROM.put(addr, state_alarm);
+}
 void loop()
 {
     Display_status = digitalRead(LDR);
+    Read_BAR = analogRead(BAR);
     for (int i = 0; i < 3; i++)
     {
         Readswitch[i] = digitalRead(BT[i]);
@@ -112,10 +146,10 @@ void loop()
 }
 void Clock()
 {
-        
+
     if (Readswitch[1] == 0 && millis() - last_time_click[1] > DEBOUNCE)
     {
-        if (++Clock_mode >= 3)
+        if (++Clock_mode >= 4)
             Clock_mode = 0;
         last_time_click[1] = millis();
     }
@@ -124,14 +158,15 @@ void Clock()
     case 0:
         display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
-        display.drawRect(0, 2, 126, 31,0);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
         display.print("Clock");
         display.setTextSize(3);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(14, 9);
+        display.setCursor(14, 8);
         if (Hour_time_now < 10)
             display.print("0");
         display.print(Hour_time_now);
@@ -139,7 +174,7 @@ void Clock()
         if (Minute_time_now < 10)
             display.print("0");
         display.print(Minute_time_now);
-        display.setCursor(101, 23);
+        display.setCursor(101, 22);
         display.setTextSize(1);
         display.print(".");
         if (Sec_time_now < 10)
@@ -147,16 +182,68 @@ void Clock()
         display.print(Sec_time_now);
         display.display();
         break;
-    case 1:
-        Hour_time_now = map(analogRead(BAR), 0, 1023, 0, 24);
-        display.clearDisplay();
+    case 1 : 
+    int set_time_q;
+    int Readswitch_clock;
+    while (Readswitch[1]!=0)
+    {
+     if (analogRead(BAR) >= 800)
+            set_time_q = 0;
+        else if (analogRead(BAR) <= 240)
+            set_time_q = 1;
+    display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
+        display.print("Clock");
+        if (set_time_q == 1)
+        {
+            display.fillRect(103, 4, 22, 11, Display_cursor[Display_status]);
+            display.setCursor(105, 6);
+            display.setTextSize(1);
+            display.setTextColor(Display_Text_cursor[Display_status]);
+            display.print("YES");
+            display.setCursor(105, 18);
+            display.setTextSize(1);
+            display.setTextColor(Display_Text[Display_status]);
+            display.print("NO");
+            Clock_mode = 1;
+        }
+        else
+        {
+            display.fillRect(103, 16, 22, 11, Display_cursor[Display_status]);
+            display.setCursor(105, 6);
+            display.setTextSize(1);
+            display.setTextColor(Display_Text[Display_status]);
+            display.print("YES");
+            display.setCursor(105, 18);
+            display.setTextSize(1);
+            display.setTextColor(Display_Text_cursor[Display_status]);
+            display.print("NO");
+            Clock_mode = -1;
+        }
+        display.display(); 
+        Readswitch[1]=digitalRead(BT[1]);
+
+    }
+        break;
+    case 2:
+        Hour_time_now = map(analogRead(BAR), 0, 1023, 0, 24);
+        if (Hour_time_now == 24)
+            Hour_time_now = 23;
+        display.clearDisplay();
+        display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
+        display.setTextSize(1);
+        display.setTextColor(Display_Text[Display_status]);
+        display.setCursor(3, 0);
         display.print("Clock");
         if (cursor_state)
-            display.fillRect(18, 3, 40, 27, Display_cursor[Display_status]);
+            display.fillRect(18, 8, 37, 22, Display_cursor[Display_status]);
         if (millis() - last_state_cursor > 500)
         {
             cursor_state = !cursor_state;
@@ -168,7 +255,7 @@ void Clock()
             display.setTextColor(Display_Text_cursor[Display_status]);
         else
             display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(20, 10);
+        display.setCursor(20, 9);
         if (Hour_time_now < 10)
             display.print("0");
         display.print(Hour_time_now);
@@ -179,16 +266,20 @@ void Clock()
         display.print(Minute_time_now);
         display.display();
         break;
-    case 2:
+    case 3:
         Minute_time_now = map(analogRead(BAR), 0, 1023, 0, 60);
+        if (Hour_time_now == 60)
+            Hour_time_now = 59;
         display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
         display.print("Clock");
         if (cursor_state)
-            display.fillRect(70, 3, 40, 27, Display_cursor[Display_status]);
+            display.fillRect(72, 8, 37, 22, Display_cursor[Display_status]);
         if (millis() - last_state_cursor > 500)
         {
             cursor_state = !cursor_state;
@@ -196,7 +287,7 @@ void Clock()
         }
         display.setTextSize(3);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(20, 10);
+        display.setCursor(20, 9);
         if (Hour_time_now < 10)
             display.print("0");
         display.print(Hour_time_now);
@@ -222,13 +313,15 @@ void Alarm()
     case 0:
         display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
         display.print("Alarm");
         display.setTextSize(3);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(10, 10);
+        display.setCursor(10, 8);
         if (Hour_time_alarm < 10)
             display.print("0");
         display.print(Hour_time_alarm);
@@ -240,7 +333,7 @@ void Alarm()
         display.setTextSize(1);
         if (state_alarm == 1)
         {
-            display.fillRect(103, 4, 24, 11, Display_cursor[Display_status]);
+            display.fillRect(103, 4, 22, 11, Display_cursor[Display_status]);
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text_cursor[Display_status]);
@@ -252,7 +345,7 @@ void Alarm()
         }
         else
         {
-            display.fillRect(103, 16, 24, 11, Display_cursor[Display_status]);
+            display.fillRect(103, 16, 22, 11, Display_cursor[Display_status]);
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text[Display_status]);
@@ -268,12 +361,14 @@ void Alarm()
         Hour_time_alarm = map(analogRead(BAR), 0, 1023, 0, 24);
         display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
         display.print("Alarm");
         if (cursor_state)
-            display.fillRect(8, 3, 40, 27, Display_cursor[Display_status]);
+            display.fillRect(8, 8, 37, 22, Display_cursor[Display_status]);
         if (millis() - last_state_cursor > 500)
         {
             cursor_state = !cursor_state;
@@ -285,7 +380,7 @@ void Alarm()
             display.setTextColor(Display_Text_cursor[Display_status]);
         else
             display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(10, 10);
+        display.setCursor(10, 9);
         if (Hour_time_alarm < 10)
             display.print("0");
         display.print(Hour_time_alarm);
@@ -298,7 +393,7 @@ void Alarm()
         display.setTextSize(1);
         if (state_alarm == 1)
         {
-            display.fillRect(103, 4, 24, 11, Display_cursor[Display_status]);
+            display.fillRect(103, 4, 22, 11, Display_cursor[Display_status]);
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text_cursor[Display_status]);
@@ -310,7 +405,7 @@ void Alarm()
         }
         else
         {
-            display.fillRect(103, 16, 24, 11, Display_cursor[Display_status]);
+            display.fillRect(103, 16, 22, 11, Display_cursor[Display_status]);
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text[Display_status]);
@@ -326,12 +421,14 @@ void Alarm()
         Minute_time_alarm = map(analogRead(BAR), 0, 1023, 0, 60);
         display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
         display.print("Alarm");
         if (cursor_state)
-            display.fillRect(60, 3, 40, 27, Display_cursor[Display_status]);
+            display.fillRect(63, 8, 37, 22, Display_cursor[Display_status]);
         if (millis() - last_state_cursor > 500)
         {
             cursor_state = !cursor_state;
@@ -339,7 +436,7 @@ void Alarm()
         }
         display.setTextSize(3);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(10, 10);
+        display.setCursor(10, 9);
         if (Hour_time_alarm < 10)
             display.print("0");
         display.print(Hour_time_alarm);
@@ -352,7 +449,7 @@ void Alarm()
         display.setTextSize(1);
         if (state_alarm == 1)
         {
-            display.fillRect(103, 4, 24, 11, Display_cursor[Display_status]);
+            display.fillRect(103, 4, 22, 11, Display_cursor[Display_status]);
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text_cursor[Display_status]);
@@ -364,7 +461,7 @@ void Alarm()
         }
         else
         {
-            display.fillRect(103, 16, 24, 11, Display_cursor[Display_status]);
+            display.fillRect(103, 16, 22, 11, Display_cursor[Display_status]);
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text[Display_status]);
@@ -377,20 +474,21 @@ void Alarm()
         display.display();
         break;
     case 3:
-        
         if (analogRead(BAR) >= 800)
             state_alarm = 0;
         else if (analogRead(BAR) <= 240)
             state_alarm = 1;
         display.clearDisplay();
         display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+        display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+        display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
         display.setTextSize(1);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(0, 0);
+        display.setCursor(3, 0);
         display.print("Alarm");
         display.setTextSize(3);
         display.setTextColor(Display_Text[Display_status]);
-        display.setCursor(10, 10);
+        display.setCursor(10, 9);
         if (Hour_time_alarm < 10)
             display.print("0");
         display.print(Hour_time_alarm);
@@ -402,7 +500,13 @@ void Alarm()
         display.setTextSize(1);
         if (state_alarm == 1)
         {
-            display.fillRect(103, 4, 24, 11, Display_cursor[Display_status]);
+            if (cursor_state)
+                display.fillRect(103, 4, 22, 11, Display_cursor[Display_status]);
+            if (millis() - last_state_cursor > 500)
+            {
+                cursor_state = !cursor_state;
+                last_state_cursor = millis();
+            }
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text_cursor[Display_status]);
@@ -415,7 +519,13 @@ void Alarm()
         }
         else
         {
-            display.fillRect(103, 16, 24, 11, Display_cursor[Display_status]);
+            if (cursor_state)
+                display.fillRect(103,16, 22, 11, Display_cursor[Display_status]);
+            if (millis() - last_state_cursor > 500)
+            {
+                cursor_state = !cursor_state;
+                last_state_cursor = millis();
+            }
             display.setCursor(105, 6);
             display.setTextSize(1);
             display.setTextColor(Display_Text[Display_status]);
@@ -426,20 +536,24 @@ void Alarm()
             display.print("OFF");
         }
         display.display();
+
         break;
     }
 }
+
 void count_time()
-{   
+{
     if (Readswitch[1] == 0 && millis() - last_time_click[1] > DEBOUNCE && state_count == 0 && Mode[Mode_n] == 3)
     {
-       reset_time_count();
+        reset_time_count();
     }
     display.clearDisplay();
     display.fillRect(0, 0, 128, 32, Display_BG[Display_status]);
+    display.drawRect(1, 2, 125, 29, Display_frame[Display_status]);
+    display.fillRect(2, 0, 30, 8, Display_BG[Display_status]);
     display.setTextSize(1);
     display.setTextColor(Display_Text[Display_status]);
-    display.setCursor(0, 0);
+    display.setCursor(3, 0);
     display.print("Count");
     display.setTextSize(3);
     display.setTextColor(Display_Text[Display_status]);
@@ -462,7 +576,7 @@ void count_time()
 
 void alarm_clock_sound()
 {
-    tone(BUZZER,250,500);
+    tone(BUZZER, 250, 500);
 }
 
 void increasing_sec()
@@ -471,6 +585,8 @@ void increasing_sec()
     {
         Sec_time_now = 0;
         Minute_time_now++;
+        set_time();
+        set_alarm_time();
     };
     if (Minute_time_now >= 60)
     {
